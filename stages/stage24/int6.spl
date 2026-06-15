@@ -1,0 +1,118 @@
+alias userSP R0;
+alias currProcessTable R1;
+alias retAddr R2;
+alias fd R3;
+alias buffer R4;
+
+userSP = SP;
+currProcessTable = PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16;
+
+fd = [[PTBR + (userSP - 4) / 512 * 2] * 512 + (userSP - 4) % 512];
+buffer = [[PTBR + (userSP - 3) / 512 * 2] * 512 + (userSP - 3) % 512];
+retAddr = [PTBR + (userSP - 1) / 512 * 2] * 512 + (userSP - 1) % 512;
+
+[currProcessTable + 9] = INT_READ;
+[currProcessTable + 13] = userSP;
+SP = [currProcessTable + 11] * 512 - 1;
+
+// Read from terminal
+if (fd == -1) then
+	multipush(R1, R2);
+	R1 = TERMINAL_READ;
+	R2 = [SYSTEM_STATUS_TABLE + 1];
+	R3 = buffer;
+
+	call DEVICE_MANAGER;
+	multipop(R1, R2);
+
+    [retAddr] = 0;
+else
+	if (fd < 0 || fd > 7) then
+		[retAddr] = -1;
+		goto END;
+	endif; 
+
+    alias resourceTableEntry R5;
+    resourceTableEntry = [currProcessTable + 11] * 512 + RESOURCE_TABLE_OFFSET + fd * 2;
+	
+	if ([resourceTableEntry] != FILE) then
+		[retAddr] = -1;
+		goto END;
+	endif;
+	
+	alias openFileEntry R6;
+	openFileEntry = OPEN_FILE_TABLE + [resourceTableEntry + 1] * 4;
+	alias inodeIndex R7;
+	inodeIndex = [openFileEntry];
+
+	multipush(R1, R2, R3, R4, R5, R6, R7);
+	R1 = ACQUIRE_INODE;
+	R2 = inodeIndex;
+	R3 = [SYSTEM_STATUS_TABLE + 1]; 
+	call RESOURCE_MANAGER;
+
+	multipop(R1, R2, R3, R4, R5, R6, R7);
+
+	if (R0 == -1) then
+		[retAddr] = -1;
+		goto END;
+	endif;
+
+	alias lseekPOS R0;
+	lseekPOS = [openFileEntry + 2];
+
+	buffer = [PTBR + buffer / 512 * 2] * 512 + buffer % 512;
+
+	if ([openFileEntry] == INODE_ROOT) then
+		// 480 = root file size
+		if (lseekPOS == 480) then
+			[retAddr] = -2;
+		else 
+			[buffer] = [ROOT_FILE + lseekPOS];
+
+			[openFileEntry + 2] = lseekPOS + 1;
+			[retAddr] = 0;
+		endif;
+
+		multipush(R0, R1, R2, R3, R4, R5, R6, R7);
+
+		R1 = RELEASE_INODE;
+		R2 = inodeIndex;
+		R3 = [SYSTEM_STATUS_TABLE + 1];
+		call RESOURCE_MANAGER;
+
+		multipop(R0, R1, R2, R3, R4, R5, R6, R7);
+		goto END;
+	else
+		if (lseekPOS == [INODE_TABLE + inodeIndex * 16 + 2]) then
+			[retAddr] = -2;
+        else
+		    multipush(R0, R1, R2, R3, R4, R5, R6, R7);
+		    R1 = BUFFERED_READ;
+		    R2 = [INODE_TABLE + inodeIndex * 16 + 8 + lseekPOS / 512];
+		    R3 = lseekPOS % 512;
+		    R4 = buffer;
+
+		    call FILE_MANAGER;
+		    multipop(R0, R1, R2, R3, R4, R5, R6, R7);
+
+            lseekPOS = lseekPOS + 1;
+		    [openFileEntry + 2] = lseekPOS;
+
+		    [retAddr] = 0;
+		endif;
+
+		multipush(R0, R1, R2, R3, R4, R5, R6, R7);
+		R1 = RELEASE_INODE;
+		R2 = inodeIndex;
+		R3 = [SYSTEM_STATUS_TABLE + 1];
+
+		call RESOURCE_MANAGER;
+		multipop(R0, R1, R2, R3, R4, R5, R6, R7);
+	endif;
+endif;
+
+END:
+[currProcessTable + 9] = 0;
+SP = [currProcessTable + 13];
+ireturn;

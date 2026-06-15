@@ -1,0 +1,1 @@
+The CLOSE block has no such issue since resourceTableEntry is computed once before the multipush and only read after — and since R6 is restored by multipop to that same computed value, it's fine there

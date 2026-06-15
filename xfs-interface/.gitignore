@@ -1,0 +1,11 @@
+*~
+*.dSYM
+*.vscode/
+.DS_Store
+temp*
+test
+inodeusertable.txt
+rootfile.txt
+tags
+mem
+disk.xfs

@@ -1,0 +1,19 @@
+int main() {
+  decl
+    int x;
+    str filename;
+  enddecl
+
+  begin
+    
+    x = exposcall("Read", -1, filename);
+    x = exposcall("Exec", filename);
+
+    
+    if (x != 0) then
+      filename = "NO_FILE";
+      x = exposcall("Write", -1, filename);
+    endif;
+    return 0;
+  end
+}
